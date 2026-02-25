@@ -5,21 +5,16 @@ from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-# ==============================
-# Environment Variables
-# ==============================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 API_KEY = os.environ.get("API_KEY")
 
 UPI_ID = "bhojabikazim2004@okhdfcbank"
 
-# ==============================
-# Database Connection
-# ==============================
+
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
-# Create table if not exists
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -35,21 +30,14 @@ def init_db():
     cur.close()
     conn.close()
 
+
 init_db()
 
-# ==============================
-# API Key Middleware
-# ==============================
+
 def require_api_key(req):
-    client_key = req.headers.get("X-API-KEY")
-    if client_key != API_KEY:
-        return False
-    return True
+    return req.headers.get("X-API-KEY") == API_KEY
 
 
-# ==============================
-# Generate QR Endpoint
-# ==============================
 @app.route("/generate_qr", methods=["POST"])
 def generate_qr():
 
@@ -82,9 +70,6 @@ def generate_qr():
     return jsonify({"upi_link": upi_link}), 200
 
 
-# ==============================
-# Check Payment Status (WITH 20-SEC AUTO SUCCESS)
-# ==============================
 @app.route("/check_status", methods=["GET"])
 def check_status():
 
@@ -99,12 +84,7 @@ def check_status():
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Ask the database for the order AND how many seconds have passed since creation
-    cur.execute("""
-        SELECT *, EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - created_at)) AS elapsed 
-        FROM orders 
-        WHERE order_id = %s
-    """, (order_id,))
+    cur.execute("SELECT * FROM orders WHERE order_id = %s", (order_id,))
     order = cur.fetchone()
 
     if not order:
@@ -112,24 +92,12 @@ def check_status():
         conn.close()
         return jsonify({"error": "Order not found"}), 404
 
-    # --- AUTO SUCCESS LOGIC ---
-    # If the order is pending and 20+ seconds have passed, update it to success
-    if order["status"] == "pending" and order["elapsed"] >= 20:
-        cur.execute("UPDATE orders SET status = 'success' WHERE order_id = %s", (order_id,))
-        conn.commit()
-        order["status"] = "success"  # Update the response variable to match
-        print(f"[API] Order {order_id} automatically marked as SUCCESS after 20 seconds.")
-    # --------------------------
-
     cur.close()
     conn.close()
 
     return jsonify({"status": order["status"]}), 200
 
 
-# ==============================
-# Admin: Get All Orders
-# ==============================
 @app.route("/admin/orders", methods=["GET"])
 def get_all_orders():
 
@@ -148,9 +116,6 @@ def get_all_orders():
     return jsonify(orders), 200
 
 
-# ==============================
-# Admin: Update Order Status
-# ==============================
 @app.route("/admin/update_status", methods=["POST"])
 def update_status():
 
@@ -181,9 +146,6 @@ def update_status():
     return jsonify({"message": "Status updated"}), 200
 
 
-# ==============================
-# Run Server (Render Compatible)
-# ==============================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
